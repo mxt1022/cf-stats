@@ -15,49 +15,61 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      # Check out repository under $GITHUB_WORKSPACE, so the job can access it
-      - uses: actions/checkout@v2
+      # 1. Checkout repository
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      # Run using Python 3.10 for consistency and aiohttp
+      # 2. Setup Python 3.10
       - name: Set up Python 3.10
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
           architecture: 'x64'
 
-      # Cache dependencies. From:
-      # https://github.com/actions/cache/blob/master/examples.md#python---pip
-      - uses: actions/cache@v4
+      # 3. Cache pip dependencies (optional, but faster)
+      - name: Cache pip packages
+        uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}-v2  # changed key to force fresh cache
           restore-keys: |
             ${{ runner.os }}-pip-
-      # Install dependencies with `pip`
+
+      # 4. Install dependencies with special care for setuptools/pkg_resources
       - name: Install requirements
         run: |
           python3 -m pip install --upgrade pip
-          python3 -m pip install --upgrade setuptools wheel
+          # Force reinstall setuptools and ensure pkg_resources is available
+          python3 -m pip install --force-reinstall --upgrade setuptools wheel
+          # Install project dependencies
           python3 -m pip install -r requirements.txt
-          pip install -e .
+          # Install the package in editable mode (if needed)
+          python3 -m pip install -e .
+          # One more explicit upgrade of setuptools to ensure it's not overwritten
+          python3 -m pip install --force-reinstall --upgrade setuptools
 
-      - name: create env file
+      # 5. Verify pkg_resources is importable (debug step)
+      - name: Verify pkg_resources
+        run: |
+          python3 -c "import pkg_resources; print('pkg_resources imported successfully')"
+
+      # 6. Create environment file from template
+      - name: Create env file
         run: |
           touch config/.env
           cat config/.env.template > config/.env
 
-      # Generate all statistics images
+      # 7. Generate images
       - name: Generate images
         run: |
           python3 --version
           python3 app/main.py
 
-      # Commit all changed files to the repository
+      # 8. Commit and push changes
       - name: Commit to the repo
         run: |
           git config --global user.name "sudiptob2/cf-stats"
           git config --global user.email "cf-stats[bot]@sudiptob2.github.io"
           git add .
-          # Force the build to succeed, even if no files were changed
           git commit -m 'Update generated files' || true
           git push
