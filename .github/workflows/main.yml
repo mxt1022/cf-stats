@@ -55,7 +55,11 @@ jobs:
         run: |
           python3 --version
           python3 app/main.py
-
+          
+      - name: Generate rating curve
+        run: |
+          python3 generate_rating_curve.py
+          
       - name: Commit to the repo
         run: |
           git config --global user.name "sudiptob2/cf-stats"
