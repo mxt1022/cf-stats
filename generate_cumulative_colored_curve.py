@@ -1,10 +1,8 @@
 import requests
 import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
 from datetime import datetime
 import os
 from collections import defaultdict
-import calendar
 
 CF_HANDLE = "InsaneArrogant"  # 替换为你的用户名
 
@@ -38,64 +36,62 @@ def fetch_accepted_submissions(handle):
             rating = problem.get('rating')
             if rating is not None:
                 submissions.append({
-                    'date': datetime.fromtimestamp(sub['creationTimeSeconds']),
+                    'date': datetime.fromtimestamp(sub['creationTimeSeconds']).date(),
                     'rating': rating
                 })
     return submissions
 
-def aggregate_by_month(submissions):
-    # { (year, month): { difficulty_name: count } }
-    monthly = defaultdict(lambda: defaultdict(int))
+def aggregate_by_day(submissions):
+    # { date: { difficulty_name: count } }
+    daily = defaultdict(lambda: defaultdict(int))
     for sub in submissions:
-        year = sub['date'].year
-        month = sub['date'].month
-        rating = sub['rating']
-        diff_name = get_rating_range_name(rating)
-        monthly[(year, month)][diff_name] += 1
-    return monthly
+        date = sub['date']
+        diff_name = get_rating_range_name(sub['rating'])
+        daily[date][diff_name] += 1
+    return daily
 
-def plot_stacked_bar(monthly_data):
-    if not monthly_data:
+def plot_daily_stacked_bar(daily_data):
+    if not daily_data:
         print("没有数据")
         return
     
-    # 排序月份
-    sorted_months = sorted(monthly_data.keys())
-    # 生成月份标签
-    month_labels = [f"{y}-{m:02d}" for y, m in sorted_months]
+    # 按日期排序
+    sorted_dates = sorted(daily_data.keys())
+    # 日期标签格式化为 YYYY-MM-DD
+    date_labels = [d.strftime('%Y-%m-%d') for d in sorted_dates]
     
     # 准备每个难度区间的数据列表
     diff_names = [name for (_, _, _, name) in DIFFICULTY_RANGES]
     diff_colors = [color for (_, _, color, _) in DIFFICULTY_RANGES]
     data_by_diff = {name: [] for name in diff_names}
-    for ym in sorted_months:
+    for date in sorted_dates:
         for name in diff_names:
-            data_by_diff[name].append(monthly_data[ym].get(name, 0))
+            data_by_diff[name].append(daily_data[date].get(name, 0))
     
     # 绘制堆叠柱状图
-    fig, ax = plt.subplots(figsize=(14, 6))
-    bottom = [0] * len(sorted_months)
+    fig, ax = plt.subplots(figsize=(max(10, len(sorted_dates) * 0.3), 6))
+    bottom = [0] * len(sorted_dates)
     for name, color in zip(diff_names, diff_colors):
         values = data_by_diff[name]
         if max(values) > 0:
-            ax.bar(month_labels, values, bottom=bottom, label=name, color=color, edgecolor='white', linewidth=0.5)
+            ax.bar(date_labels, values, bottom=bottom, label=name, color=color, edgecolor='white', linewidth=0.5)
             bottom = [bottom[i] + values[i] for i in range(len(values))]
     
-    ax.set_title(f"{CF_HANDLE} - Monthly Solved Problems by Difficulty", fontsize=14)
-    ax.set_xlabel("Month")
+    ax.set_title(f"{CF_HANDLE} - Daily Solved Problems by Difficulty (only days with submissions)", fontsize=14)
+    ax.set_xlabel("Submission Date")
     ax.set_ylabel("Number of Solved Problems")
     ax.legend(loc='upper left', title="Difficulty")
-    plt.xticks(rotation=45, ha='right')
+    plt.xticks(rotation=90, ha='center', fontsize=8)  # 日期标签旋转90度避免重叠
     plt.tight_layout()
     
     os.makedirs('output', exist_ok=True)
-    plt.savefig('output/stacked_bar.svg', format='svg')
+    plt.savefig('output/daily_stacked_bar.svg', format='svg')
     plt.close()
-    print("✅ 堆叠柱状图已生成: output/stacked_bar.svg")
+    print("✅ 每日堆叠柱状图已生成: output/daily_stacked_bar.svg")
 
 if __name__ == '__main__':
     subs = fetch_accepted_submissions(CF_HANDLE)
     print(f"获取到 {len(subs)} 条有评分的 AC 记录")
-    monthly = aggregate_by_month(subs)
-    print(f"涉及 {len(monthly)} 个月份")
-    plot_stacked_bar(monthly)
+    daily = aggregate_by_day(subs)
+    print(f"涉及 {len(daily)} 天有提交记录")
+    plot_daily_stacked_bar(daily)
