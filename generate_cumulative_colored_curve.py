@@ -1,12 +1,13 @@
 import requests
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 from datetime import datetime
 import os
 from collections import defaultdict
 
-CF_HANDLE = "InsaneArrogant"  # 替换为你的用户名
+CF_HANDLE = "InsaneArrogant"  # 替换成你的用户名
 
-# 难度区间及对应颜色（CF 标准）
+# 难度区间及颜色（CF 标准）
 DIFFICULTY_RANGES = [
     (0, 1199, '#CCCCCC', 'Grey'),
     (1200, 1599, '#77FF77', 'Green'),
@@ -36,62 +37,97 @@ def fetch_accepted_submissions(handle):
             rating = problem.get('rating')
             if rating is not None:
                 submissions.append({
-                    'date': datetime.fromtimestamp(sub['creationTimeSeconds']).date(),
+                    'date': datetime.fromtimestamp(sub['creationTimeSeconds']),
                     'rating': rating
                 })
+    submissions.sort(key=lambda x: x['date'])
     return submissions
 
-def aggregate_by_day(submissions):
-    # { date: { difficulty_name: count } }
-    daily = defaultdict(lambda: defaultdict(int))
-    for sub in submissions:
-        date = sub['date']
-        diff_name = get_rating_range_name(sub['rating'])
-        daily[date][diff_name] += 1
-    return daily
-
-def plot_daily_stacked_bar(daily_data):
-    if not daily_data:
-        print("没有数据")
-        return
+def aggregate_cumulative_by_month(submissions):
+    """
+    按月累积统计每个难度区间的解题数量
+    返回: {
+        'dates': [datetime, ...],
+        'cumulative': {
+            'Grey': [count, ...],
+            'Green': [...],
+            ...
+        }
+    }
+    """
+    if not submissions:
+        return None
+    # 确定时间范围：从第一个提交的月份到最后一个提交的月份
+    start_date = submissions[0]['date'].replace(day=1)
+    end_date = submissions[-1]['date'].replace(day=1)
+    # 生成所有月份
+    dates = []
+    current = start_date
+    while current <= end_date:
+        dates.append(current)
+        # 下个月
+        if current.month == 12:
+            current = current.replace(year=current.year+1, month=1)
+        else:
+            current = current.replace(month=current.month+1)
     
-    # 按日期排序
-    sorted_dates = sorted(daily_data.keys())
-    # 日期标签格式化为 YYYY-MM-DD
-    date_labels = [d.strftime('%Y-%m-%d') for d in sorted_dates]
-    
-    # 准备每个难度区间的数据列表
+    # 初始化累积计数器
     diff_names = [name for (_, _, _, name) in DIFFICULTY_RANGES]
-    diff_colors = [color for (_, _, color, _) in DIFFICULTY_RANGES]
-    data_by_diff = {name: [] for name in diff_names}
-    for date in sorted_dates:
-        for name in diff_names:
-            data_by_diff[name].append(daily_data[date].get(name, 0))
+    cumulative = {name: [0]*len(dates) for name in diff_names}
     
-    # 绘制堆叠柱状图
-    fig, ax = plt.subplots(figsize=(max(10, len(sorted_dates) * 0.3), 6))
-    bottom = [0] * len(sorted_dates)
-    for name, color in zip(diff_names, diff_colors):
-        values = data_by_diff[name]
-        if max(values) > 0:
-            ax.bar(date_labels, values, bottom=bottom, label=name, color=color, edgecolor='white', linewidth=0.5)
-            bottom = [bottom[i] + values[i] for i in range(len(values))]
+    # 遍历提交，填充累积数据
+    sub_idx = 0
+    for i, month_date in enumerate(dates):
+        # 复制上一个月的累积值（如果有）
+        if i > 0:
+            for name in diff_names:
+                cumulative[name][i] = cumulative[name][i-1]
+        # 添加本月内提交的题目
+        while sub_idx < len(submissions):
+            sub_date = submissions[sub_idx]['date']
+            if sub_date.year == month_date.year and sub_date.month == month_date.month:
+                rating = submissions[sub_idx]['rating']
+                diff_name = get_rating_range_name(rating)
+                cumulative[diff_name][i] += 1
+                sub_idx += 1
+            else:
+                break
+    return {'dates': dates, 'cumulative': cumulative}
+
+def plot_cumulative_trends(data):
+    dates = data['dates']
+    cumulative = data['cumulative']
     
-    ax.set_title(f"{CF_HANDLE} - Daily Solved Problems by Difficulty (only days with submissions)", fontsize=14)
-    ax.set_xlabel("Submission Date")
-    ax.set_ylabel("Number of Solved Problems")
+    fig, ax = plt.subplots(figsize=(14, 7))
+    
+    # 绘制每个难度区间的累积曲线
+    for low, high, color, name in DIFFICULTY_RANGES:
+        values = cumulative[name]
+        if max(values) > 0:  # 只绘制有数据的区间
+            ax.plot(dates, values, label=name, color=color, linewidth=2, marker='o', markersize=3)
+    
+    ax.set_title(f"{CF_HANDLE} - Cumulative Solved Problems by Difficulty (Monthly)", fontsize=14)
+    ax.set_xlabel("Month")
+    ax.set_ylabel("Cumulative Count")
     ax.legend(loc='upper left', title="Difficulty")
-    plt.xticks(rotation=90, ha='center', fontsize=8)  # 日期标签旋转90度避免重叠
-    plt.tight_layout()
+    ax.grid(True, linestyle='--', alpha=0.5)
     
+    # 格式化 X 轴日期
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
+    ax.xaxis.set_major_locator(mdates.MonthLocator(interval=6))
+    plt.xticks(rotation=45)
+    
+    plt.tight_layout()
     os.makedirs('output', exist_ok=True)
-    plt.savefig('output/daily_stacked_bar.svg', format='svg')
+    plt.savefig('output/cumulative_trends.svg', format='svg')
     plt.close()
-    print("✅ 每日堆叠柱状图已生成: output/daily_stacked_bar.svg")
+    print("✅ 累积趋势图已生成: output/cumulative_trends.svg")
 
 if __name__ == '__main__':
     subs = fetch_accepted_submissions(CF_HANDLE)
     print(f"获取到 {len(subs)} 条有评分的 AC 记录")
-    daily = aggregate_by_day(subs)
-    print(f"涉及 {len(daily)} 天有提交记录")
-    plot_daily_stacked_bar(daily)
+    data = aggregate_cumulative_by_month(subs)
+    if data:
+        plot_cumulative_trends(data)
+    else:
+        print("没有足够的数据生成图表")
