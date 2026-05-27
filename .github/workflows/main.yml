@@ -56,6 +56,10 @@ jobs:
           python3 --version
           python3 app/main.py
           
+      - name: Generate cumulative colored curve
+        run: |
+          python3 generate_cumulative_colored_curve.py    
+          
       - name: Generate rating curve
         run: |
           python3 generate_rating_curve.py
