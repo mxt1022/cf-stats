@@ -15,59 +15,48 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      # Check out repository under $GITHUB_WORKSPACE, so the job can access it
+      - uses: actions/checkout@v2
 
+      # Run using Python 3.10 for consistency and aiohttp
       - name: Set up Python 3.10
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v2
         with:
           python-version: '3.10'
           architecture: 'x64'
 
-      - name: Cache pip packages
-        uses: actions/cache@v4
+      # Cache dependencies. From:
+      # https://github.com/actions/cache/blob/master/examples.md#python---pip
+      - uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}-v3
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
           restore-keys: |
             ${{ runner.os }}-pip-
-
+      # Install dependencies with `pip`
       - name: Install requirements
         run: |
-          python3 -m pip install --upgrade pip
-          # Uninstall any existing setuptools and install a known working version
-          python3 -m pip uninstall -y setuptools
-          python3 -m pip install setuptools==58.0.0
-          python3 -m pip install wheel
-          # Install dependencies from requirements.txt
+          python3 -m pip install --upgrade pip setuptools wheel
           python3 -m pip install -r requirements.txt
-          # Install the package in editable mode
-          python3 -m pip install -e .
-          # Double-check pkg_resources is available
-          python3 -c "import pkg_resources; print('pkg_resources OK')"
+          pip install -e .
 
-      - name: Create env file
+      - name: create env file
         run: |
           touch config/.env
           cat config/.env.template > config/.env
 
+      # Generate all statistics images
       - name: Generate images
         run: |
           python3 --version
           python3 app/main.py
-          
-      - name: Generate cumulative colored curve
-        run: |
-          python3 generate_cumulative_colored_curve.py    
-          
-      - name: Generate rating curve
-        run: |
-          python3 generate_rating_curve.py
-          
+
+      # Commit all changed files to the repository
       - name: Commit to the repo
         run: |
           git config --global user.name "sudiptob2/cf-stats"
           git config --global user.email "cf-stats[bot]@sudiptob2.github.io"
           git add .
+          # Force the build to succeed, even if no files were changed
           git commit -m 'Update generated files' || true
           git push
