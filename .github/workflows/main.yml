@@ -15,31 +15,42 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      # Check out repository under $GITHUB_WORKSPACE, so the job can access it
+      # Check out repository
       - uses: actions/checkout@v2
 
-      # Run using Python 3.10 for consistency and aiohttp
+      # Set up Python 3.10
       - name: Set up Python 3.10
         uses: actions/setup-python@v2
         with:
           python-version: '3.10'
           architecture: 'x64'
 
-      # Cache dependencies. From:
-      # https://github.com/actions/cache/blob/master/examples.md#python---pip
+      # Cache pip dependencies (will be rebuilt if requirements.txt changes)
       - uses: actions/cache@v4
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
           restore-keys: |
             ${{ runner.os }}-pip-
-      # Install dependencies with `pip`
+
+      # Install dependencies with a fixed setuptools version
       - name: Install requirements
         run: |
-          python3 -m pip install --upgrade pip setuptools wheel
+          python3 -m pip install --upgrade pip
+          # Remove any existing setuptools to avoid conflicts
+          python3 -m pip uninstall -y setuptools || true
+          # Install setuptools 58.0.0 (known to work with pkg_resources in pybadges)
+          python3 -m pip install setuptools==58.0.0 wheel
+          # Install project dependencies
           python3 -m pip install -r requirements.txt
-          pip install -e .
+          # Optionally upgrade pybadges to the latest version
+          python3 -m pip install --upgrade pybadges
+          # Install the current project in editable mode
+          python3 -m pip install -e .
+          # Verify pkg_resources is available
+          python3 -c "import pkg_resources; print('pkg_resources is available')"
 
+      # Create environment file (if needed)
       - name: create env file
         run: |
           touch config/.env
